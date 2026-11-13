@@ -10,12 +10,12 @@ export default testSuite(({ test }) => {
 			start: (message) => messages.push(message),
 			message: (message) => messages.push(message),
 			stop: (message, code) => { stops.push({ message, code }); },
-		}, { locale: 'zh-CN', provider: 'Codex', count: 1 });
+		}, { provider: 'Codex', count: 1 });
 		try {
 			progress.update(0, { stage: 'waiting' });
 			await delay(250);
 			expect(messages.length).toBeGreaterThan(1);
-			expect(messages[messages.length - 1]).toMatch('等待响应');
+			expect(messages[messages.length - 1]).toMatch('waiting for response');
 			expect(messages[messages.length - 1]).not.toMatch('0.0s');
 		} finally {
 			progress.stop(false);
@@ -27,7 +27,7 @@ export default testSuite(({ test }) => {
 		expect(messages.length).toBe(count);
 		expect(stops.length).toBe(1);
 		expect(stops[0].code).toBe(1);
-		expect(stops[0].message).toMatch('生成失败');
+		expect(stops[0].message).toMatch('Generation failed');
 	});
 
 	test('displays the remaining candidate after another finishes', async () => {
@@ -36,7 +36,7 @@ export default testSuite(({ test }) => {
 			start: (message) => messages.push(message),
 			message: (message) => messages.push(message),
 			stop: (message) => messages.push(message),
-		}, { locale: 'en', provider: 'OpenAI', count: 2 });
+		}, { provider: 'OpenAI', count: 2 });
 		try {
 			progress.update(0, { stage: 'validating' });
 			progress.complete(0);

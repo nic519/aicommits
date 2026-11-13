@@ -11,9 +11,10 @@ import {
 } from '@clack/prompts';
 import {
 	assertGitRepo,
-	getStagedFiles,
+	getStagedFileChanges,
 	getDetectedMessage,
 } from '../utils/git.js';
+import { formatStagedFile, formatStagedStatusSummary } from '../utils/staged-files.js';
 import { getConfig, setConfigs } from '../utils/config-runtime.js';
 import { getProvider } from '../feature/providers/index.js';
 import {
@@ -57,26 +58,28 @@ export default async (
 			await execa('git', ['add', '--update']);
 		}
 
-		const stagedFiles = await getStagedFiles(excludeFiles);
+		const stagedChanges = await getStagedFileChanges(excludeFiles);
 
-		if (!stagedFiles) {
+		if (!stagedChanges) {
 			throw new KnownError(
 				'No staged changes found. Stage your changes manually, or automatically stage all changes with the `--all` flag.'
 			);
 		}
+		const stagedFiles = stagedChanges.map(({ path }) => path);
 
 		if (!headless) {
 			const detectingFiles = spinner();
+			const detectedMessage = `${getDetectedMessage(stagedFiles)} [${formatStagedStatusSummary(stagedChanges)}]`;
 			if (stagedFiles.length <= 10) {
 				detectingFiles.start('Detecting staged files');
 				detectingFiles.stop(
-					`📁 ${getDetectedMessage(stagedFiles)}:\n${stagedFiles
-						.map((file) => `     ${file}`)
+					`📁 ${detectedMessage}:\n${stagedChanges
+						.map((file) => `     ${formatStagedFile(file)}`)
 						.join('\n')}`
 				);
 			} else {
 				detectingFiles.start('Detecting staged files');
-				detectingFiles.stop(`📁 ${getDetectedMessage(stagedFiles)}`);
+				detectingFiles.stop(`📁 ${detectedMessage}`);
 			}
 		}
 
@@ -140,7 +143,6 @@ export default async (
 			const progress = headless ? null : startGenerationProgress(
 				spinner(),
 				{
-					locale: config.locale,
 					provider: providerInstance.displayName,
 					count: generationCount,
 				}
