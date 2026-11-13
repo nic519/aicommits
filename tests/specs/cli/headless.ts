@@ -181,6 +181,66 @@ export default testSuite(({ describe }) => {
 			}
 		});
 
+		for (const useHook of [false, true]) {
+			test(`uses type=custom with saved prompts and preserves grouped bodies in ${useHook ? 'the Git hook' : 'the CLI'}`, async () => {
+				const body = '- 自动填充昵称\n\nfix(home): 修复加载状态\n\n- 复用缓存';
+				const agentServer = await startAgentServer(body);
+				const { fixture, aicommits } = await createFixture({
+					'.aicommits': [
+						'OPENAI_API_KEY=test-key',
+						`OPENAI_BASE_URL=${agentServer.baseUrl}`,
+						'OPENAI_MODEL=test-model',
+						'type=custom',
+						'description=on',
+						'prompt=GROUP_EACH_FEATURE_WITH_ITS_OWN_DETAILS',
+					].join('\n'),
+					'data.json': '{}\n',
+				});
+				try {
+					const git = await createGit(fixture.path);
+					await git('add', ['data.json']);
+					let output: string;
+					if (useHook) {
+						await aicommits(['hook', 'install']);
+						await git('commit', ['--no-edit'], { env: { CI: '1', HOME: fixture.path, USERPROFILE: fixture.path } });
+						output = (await git('log', ['-1', '--pretty=%B'])).stdout;
+					} else {
+						output = (await aicommits([], { env: { CI: '1' } })).stdout;
+					}
+					expect(output.trim()).toBe(`feat: add test data\n\n${body}`);
+					expect(agentServer.requests[0]).toMatch('GROUP_EACH_FEATURE_WITH_ITS_OWN_DETAILS');
+					expect(agentServer.requests[0]).not.toMatch('Format: plain text');
+					expect(agentServer.requests[0]).toMatch('Return a concise, non-empty body');
+				} finally {
+					await agentServer.close();
+					await fixture.rm();
+				}
+			});
+		}
+
+		test('CLI prompt replaces the configured prompt', async () => {
+			const agentServer = await startAgentServer();
+			const { fixture, aicommits } = await createFixture({
+				'.aicommits': [
+					'OPENAI_API_KEY=test-key',
+					`OPENAI_BASE_URL=${agentServer.baseUrl}`,
+					'OPENAI_MODEL=test-model',
+					'prompt=SAVED_PROMPT_SENTINEL',
+				].join('\n'),
+				'data.json': '{}\n',
+			});
+			try {
+				const git = await createGit(fixture.path);
+				await git('add', ['data.json']);
+				await aicommits(['-p', 'CLI_PROMPT_SENTINEL'], { env: { CI: '1' } });
+				expect(agentServer.requests[0]).toMatch('CLI_PROMPT_SENTINEL');
+				expect(agentServer.requests[0]).not.toMatch('SAVED_PROMPT_SENTINEL');
+			} finally {
+				await agentServer.close();
+				await fixture.rm();
+			}
+		});
+
 		test('setup requires an interactive terminal', async () => {
 			const { fixture, aicommits } = await createFixture();
 

@@ -32,6 +32,11 @@ export default command(
 					console.log('Model:', config.OPENAI_MODEL);
 				}
 
+				if (config.prompt !== undefined) {
+					console.log('Prompt:', config.prompt);
+				}
+				console.log('Description:', config.description);
+
 				return;
 			}
 
@@ -52,7 +57,13 @@ export default command(
 
 			if (mode === 'set') {
 				await setConfigs(
-					keyValues.map((keyValue) => keyValue.split('=') as [string, string])
+					keyValues.map((keyValue): [string, string] => {
+						const separator = keyValue.indexOf('=');
+						if (separator < 1) {
+							throw new KnownError(`Expected key=value, received: ${keyValue}`);
+						}
+						return [keyValue.slice(0, separator), keyValue.slice(separator + 1)];
+					})
 				);
 				return;
 			}

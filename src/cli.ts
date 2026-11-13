@@ -61,7 +61,7 @@ cli(
 			type: {
 				type: String,
 				description:
-					'Git commit message format (default: plain). Supports plain, conventional, conventional+body, gitmoji, and subject+body',
+					'Git commit message format (default: plain). Supports plain, custom, conventional, conventional+body, gitmoji, and subject+body',
 				alias: 't',
 			},
 			yes: {
@@ -87,13 +87,13 @@ cli(
 			},
 			description: {
 				type: Boolean,
-				description: 'Include a commit message description',
+				description: 'Include a commit message description (also configurable with description=on)',
 				default: false,
 			},
 			prompt: {
 				type: String,
 				description:
-					'Custom prompt to guide the LLM behavior (e.g., specific language, style instructions)',
+					'Custom prompt to guide the LLM behavior (overrides the saved prompt config)',
 				alias: 'p',
 			},
 		version: {

@@ -75,7 +75,8 @@ export default () =>
 						type: config.type,
 						locale: config.locale,
 						maxLength: config['max-length'],
-						includeBody: requiresBody,
+						includeBody: config.description || requiresBody,
+						customPrompt: config.prompt,
 						timeout,
 					})
 				)

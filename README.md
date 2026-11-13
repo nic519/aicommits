@@ -40,7 +40,7 @@ This will guide you through:
 - Selecting your AI provider (sets the `provider` config)
 - Configuring your API key, when the provider needs one
 - **Automatically fetching and selecting from available models** (when supported)
-- **Choosing your preferred commit message format** (`plain`, `conventional`,
+- **Choosing your preferred commit message format** (`plain`, `custom`, `conventional`,
   `conventional+body`, `gitmoji`, or `subject+body`)
 
 <img src=".github/assets/commit.png" alt="aicommits analyzing three staged files and proposing a conventional commit message with a body"/>
@@ -146,7 +146,7 @@ aicommits --all # or -a
 - `--generate` or `-g`: Number of messages to generate (default: **1**)
 - `--exclude` or `-x`: Files to exclude from AI analysis
 - `--description`: Include a commit message description
-- `--type` or `-t`: Git commit message format (default: **plain**). Supports `plain`, `conventional`, `conventional+body`, `gitmoji`, and `subject+body`
+- `--type` or `-t`: Git commit message format (default: **plain**). Supports `plain`, `custom`, `conventional`, `conventional+body`, `gitmoji`, and `subject+body`
 - `--prompt` or `-p`: Custom prompt to guide the LLM behavior (e.g., specific language, style instructions)
 - `--no-verify` or `-n`: Bypass pre-commit hooks while committing (default: **false**)
 - `--yes` or `-y`: Skip confirmation when committing after message generation (default: **false**)
@@ -171,9 +171,10 @@ aicommits --description
 
 #### Commit Message Formats
 
-You can choose from five different commit message formats:
+You can choose from six different commit message formats:
 
 - **plain** (default): Simple, unstructured commit messages
+- **custom**: Format and grouping defined by your custom prompt
 - **conventional**: [Conventional Commits](https://conventionalcommits.org/) format with type and scope
 - **conventional+body**: Conventional Commit subject plus a generated body
 - **gitmoji**: Emoji-based commit messages
@@ -182,6 +183,7 @@ You can choose from five different commit message formats:
 Use the `--type` flag to specify the format:
 
 ```sh
+aicommits --type custom -p "Group changes by independent feature"
 aicommits --type conventional # or -t conventional
 aicommits --type conventional+body
 aicommits --type gitmoji       # or -t gitmoji
@@ -208,6 +210,33 @@ aicommits -p "Use technical jargon suitable for senior developers"
 # Include specific details in the message
 aicommits -p "Always mention the specific function names and file paths changed"
 ```
+
+Save a default prompt once instead of wrapping the CLI in a shell function:
+
+```sh
+aicommits config set 'prompt=Write Chinese messages grouped by independent feature'
+aicommits config set type=custom description=on
+aicommits
+```
+
+The saved prompt also applies to the Git hook. A CLI `-p` prompt replaces it for
+that invocation; it is not appended. `prompt=` clears the saved prompt. Quoted
+values can contain multiple lines and `=` characters.
+
+For a message containing a title and details for each independent feature, the
+[Chinese grouped-message example](examples/grouped-commit-prompt.txt) can be saved
+from a checkout of this repository:
+
+```sh
+aicommits config set type=custom description=on locale=zh-CN \
+  "prompt=$(cat examples/grouped-commit-prompt.txt)"
+```
+
+`type=custom` leaves the wording and grouping to your prompt; `description=on`
+keeps the multiline body. The generator still requires a non-empty first line
+and, when a description is enabled, a non-empty body. This remains one Git
+commit: Git treats the first group title as the subject and later groups as
+part of the body.
 
 ### Git hook
 
@@ -392,6 +421,25 @@ The locale to use for the generated commit messages. Consult the list of codes i
 aicommits config set locale=cs
 ```
 
+#### prompt
+
+Default: unset
+
+Persistent instructions for commit message generation in both CLI and Git hook
+modes. CLI `--prompt` / `-p` overrides this value. Clear it with
+`aicommits config set prompt=`. Use `type=custom` for a prompt-defined format and
+`description=on` when that format needs a body.
+
+#### description
+
+Default: `off`
+
+Include a non-empty commit message body, without repeating `--description`.
+Accepts `on`, `off`, `true`, and `false`. `--description` always enables the body;
+body-required types (`subject+body`, `conventional+body`) still require it even
+when this setting is off. Clear the setting with `description=` to restore its
+default. Existing configurations keep their previous behavior.
+
 #### generate
 
 Default: `1`
@@ -459,6 +507,7 @@ Default: `plain`
 The type of commit message to generate. Available options:
 
 - `plain`: Simple, unstructured commit messages
+- `custom`: Format and grouping defined by your custom prompt
 - `conventional`: Conventional Commits format with type and scope
 - `conventional+body`: Conventional Commit subject plus a generated body
 - `gitmoji`: Emoji-based commit messages
@@ -467,6 +516,7 @@ The type of commit message to generate. Available options:
 Examples:
 
 ```sh
+aicommits config set type=custom
 aicommits config set type=conventional
 aicommits config set type=conventional+body
 aicommits config set type=gitmoji
