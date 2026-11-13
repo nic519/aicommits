@@ -73,7 +73,7 @@ export default async (
 		if (!headless) {
 			const detectingFiles = spinner();
 			const detectedMessage = `${getDetectedMessage(stagedFiles)} [${formatStagedStatusSummary(stagedChanges)}]`;
-			const visibleFiles = stagedChanges.slice(0, 20);
+			const visibleFiles = stagedChanges.slice(0, 10);
 			const fileLines = visibleFiles.map((file) => `     ${formatStagedFile(file)}`);
 			const remainingCount = stagedChanges.length - visibleFiles.length;
 			if (remainingCount > 0) {
