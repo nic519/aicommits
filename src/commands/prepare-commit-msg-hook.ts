@@ -126,7 +126,7 @@ export default () =>
 					'# Select one of the following messages by uncommenting:\n';
 			}
 			instructions += `\n${messages
-				.map((message) => `# ${message}`)
+				.map((message) => message.split('\n').map((line) => `# ${line}`).join('\n'))
 				.join('\n')}`;
 		} else {
 			if (supportsComments) {

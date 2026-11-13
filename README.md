@@ -170,8 +170,8 @@ Add `--description` when the commit needs context beyond its subject:
 aicommits --description
 ```
 
-For `type=custom`, your prompt decides whether to include a body. Both
-`--description` and the saved `description` setting are ignored.
+For `type=custom`, your prompt decides whether to include a body.
+`locale`, `max-length`, and `--description` are ignored.
 
 #### Commit Message Formats
 
@@ -237,9 +237,8 @@ prompt file for that invocation:
 aicommits -p "Focus on the performance changes"
 ```
 
-Prompt precedence: CLI `--prompt` / `-p`, CLI `--prompt-file`, configured
-`prompt-file`. Use either `--prompt` / `-p` or `--prompt-file` for a run; supplying
-both is an error. The selected source replaces the default file rather than
+Use either CLI `--prompt` / `-p` or CLI `--prompt-file` to override the configured
+`prompt-file` for a run; supplying both is an error. The selected source replaces the default file rather than
 combining sources. Reading a prompt file does not automatically change `type`.
 
 For built-in types, the selected instructions supplement the existing built-in
@@ -460,9 +459,8 @@ and resolves relative paths from the current working directory. A temporary
 `aicommits config set prompt-file=`. Use `type=custom` for a prompt-defined
 format, including whether to include a body.
 
-The development-only `prompt` and `description` config keys are no longer used.
-Move long instructions into a prompt file. For built-in formats, request a body
-with the original `--description` option or the `subject+body` / `conventional+body`
+For built-in formats, request a body with the original `--description` option
+or the `subject+body` / `conventional+body`
 types. For `type=custom`, the prompt decides whether a body is needed.
 
 #### generate

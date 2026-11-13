@@ -91,6 +91,30 @@ const asGenerationModel = (languageModel: LanguageModel): GenerationModel => {
 
 export default testSuite(({ describe }) => {
 	describe('generateCommitMessage', ({ test }) => {
+		test('preserves fenced content inside a custom one-shot message', async () => {
+			const { fixture } = await createFixture({ 'file.txt': 'test\n' });
+			try {
+				const git = await createGit(fixture.path);
+				await git('add', ['file.txt']);
+				const body = 'Example:\n\n```ts\nconst changed = true;\n```';
+				const result = await generateCommitMessage({
+					model: {
+						mode: 'fallback', isLocal: false, callOptions: {},
+						languageModel: new MockLanguageModelV4({
+							doGenerate: textGeneration(`feat: document sample\n\n${body}`),
+						}),
+					},
+					cwd: fixture.path, files: ['file.txt'],
+					type: 'custom', locale: 'en', maxLength: 72,
+					includeBody: false, timeout: 5000,
+					customPrompt: 'Include a fenced TypeScript example in the body.',
+				});
+				expect(result.message.body).toBe(body);
+			} finally {
+				await fixture.rm();
+			}
+		});
+
 		test('includes reported usage from invalid agent SDK responses before a successful retry', async () => {
 			const { fixture } = await createFixture({ 'file.txt': 'test\n' });
 			try {

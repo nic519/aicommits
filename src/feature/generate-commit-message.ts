@@ -1,5 +1,6 @@
 import {
 	ToolLoopAgent,
+	ToolChoiceViolationError,
 	generateText,
 	hasToolCall,
 	stepCountIs,
@@ -566,10 +567,10 @@ const parseOneShotMessage = (
 	text: string,
 	includeBody: AgentGenerateInput['includeBody']
 ): CommitMessage => {
-	const lines = text
-		.replace(/```(?:\w+)?/g, '')
-		.trim()
-		.split('\n');
+	const content = includeBody === 'optional'
+		? text
+		: text.replace(/```(?:\w+)?/g, '');
+	const lines = content.trim().split('\n');
 	const subject = validateSubject(lines.shift() || '');
 	const body = includeBody ? lines.join('\n').trim() : '';
 	if (includeBody === true && !body) {
@@ -1004,7 +1005,12 @@ export const generateCommitMessage = async ({
 		try {
 			// Consume actual stream events; never infer output from elapsed time.
 			for await (const part of result.fullStream) {
-				if (part.type === 'error') throw part.error;
+				if (part.type === 'error') {
+					// Local models may ignore required tools. Preserve their retry and
+					// one-shot fallback instead of failing during progress consumption.
+					if (isLocal && ToolChoiceViolationError.isInstance(part.error)) continue;
+					throw part.error;
+				}
 				if (part.type === 'start-step') {
 					onProgress?.({ stage: 'waiting' });
 				} else if (part.type === 'reasoning-delta') {
