@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { z } from 'zod';
+import type { OnGenerationProgress } from './generation-progress.js';
 import type { GenerationModel } from './providers/base.js';
 import {
 	getCommitTypePolicy,
@@ -60,6 +61,7 @@ export type GenerateCommitMessageOptions = {
 	includeBody: boolean;
 	timeout: number;
 	customPrompt?: string;
+	onProgress?: OnGenerationProgress;
 };
 
 const formatInstructions = {
@@ -579,6 +581,7 @@ export const generateCommitMessage = async ({
 	includeBody,
 	timeout,
 	customPrompt,
+	onProgress,
 }: GenerateCommitMessageOptions) => {
 	const { languageModel, agent: agentGenerate, mode, isLocal, callOptions } = model;
 	if (!languageModel && !agentGenerate) {
@@ -642,6 +645,7 @@ export const generateCommitMessage = async ({
 			await rm(temporaryDirectory, { recursive: true, force: true });
 		}
 	};
+	onProgress?.({ stage: 'reading-diff' });
 	const stagedDiff = await getStagedDiff(files, maxSelectedDiffBytes);
 	const runOneShot = async (
 		prompt: string,
@@ -651,6 +655,7 @@ export const generateCommitMessage = async ({
 		const results = [];
 		for (let attempt = 1; attempt <= ONE_SHOT_ATTEMPTS; attempt += 1) {
 			if (agentGenerate) {
+				onProgress?.({ stage: 'waiting' });
 				const agentResult = await agentGenerate({
 					system: buildCommitInstructions(
 						{
@@ -666,7 +671,9 @@ export const generateCommitMessage = async ({
 					includeBody: oneShotIncludeBody,
 					cwd,
 					timeout: budget.nextModelTimeout(),
+					onProgress,
 				});
+				onProgress?.({ stage: 'validating' });
 				try {
 					const subject = validateSubject(agentResult.message.subject);
 					const body = oneShotIncludeBody
@@ -689,6 +696,7 @@ export const generateCommitMessage = async ({
 			}
 			let result;
 			try {
+				onProgress?.({ stage: 'waiting-complete' });
 				result = await generateText({
 					model: languageModel!,
 					system: buildCommitInstructions(
@@ -719,6 +727,7 @@ export const generateCommitMessage = async ({
 				}
 				throw error;
 			}
+			onProgress?.({ stage: 'validating' });
 			results.push(result);
 			try {
 				return {
@@ -829,6 +838,7 @@ export const generateCommitMessage = async ({
 				.max(MAX_INSPECTION_GROUPS),
 		}),
 		execute: async ({ groups }) => {
+			onProgress?.({ stage: 'tool' });
 			agentDiffReads += 1;
 			if (inspectedStagedChanges) {
 				return '[Staged changes already inspected]';
@@ -874,6 +884,7 @@ export const generateCommitMessage = async ({
 		description: 'Read the staged Git diff for one or more staged files.',
 		inputSchema: z.object({ paths: z.array(z.string()).min(1) }),
 		execute: async ({ paths }) => {
+			onProgress?.({ stage: 'tool' });
 			agentDiffReads += 1;
 			if (agentDiffReads > MAX_AGENT_DIFF_READS) {
 				return '[Diff read call budget exhausted]';
@@ -930,6 +941,7 @@ export const generateCommitMessage = async ({
 		maxOutputTokens: MAX_COMMIT_MESSAGE_OUTPUT_TOKENS,
 		...callOptions,
 		prepareStep: ({ stepNumber }) => {
+			onProgress?.({ stage: 'waiting' });
 			if (!isLocal && !hasCompleteDiff && stepNumber === 0) {
 				return {
 					toolChoice: {
@@ -969,6 +981,24 @@ export const generateCommitMessage = async ({
 		});
 		let staticToolCalls: Awaited<typeof result.staticToolCalls>;
 		try {
+			// Consume actual stream events; never infer output from elapsed time.
+			for await (const part of result.fullStream) {
+				if (part.type === 'error') throw part.error;
+				if (part.type === 'start-step') {
+					onProgress?.({ stage: 'waiting' });
+				} else if (part.type === 'reasoning-delta') {
+					onProgress?.({ stage: 'thinking' });
+				} else if (part.type === 'tool-call') {
+					onProgress?.({
+						stage: part.toolName === 'submitCommitMessage' ? 'receiving' : 'tool',
+					});
+				} else if (
+					part.type === 'text-delta' ||
+					part.type === 'tool-input-delta'
+				) {
+					onProgress?.({ stage: 'receiving' });
+				}
+			}
 			staticToolCalls = await result.staticToolCalls;
 		} catch (error) {
 			throw agentStreamError ?? error;
@@ -1013,6 +1043,7 @@ export const generateCommitMessage = async ({
 		throw new Error('The model did not submit a commit message.');
 	}
 
+	onProgress?.({ stage: 'validating' });
 	const subject = normalizeSubject(submission.input.subject);
 	const body = includeBody ? submission.input.body?.trim() : undefined;
 

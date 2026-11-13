@@ -20,6 +20,7 @@ import {
 	formatCommitMessage,
 	generateCommitMessage,
 } from '../feature/generate-commit-message.js';
+import { startGenerationProgress } from '../feature/generation-progress.js';
 import { getCommitTypePolicy } from '../utils/config-types.js';
 import {
 	KnownError,
@@ -134,19 +135,19 @@ export default async (
 
 		const attemptGeneration = async () => {
 			const model = providerInstance.getGenerationModel(config.model!);
-			const s = headless ? null : spinner();
-			if (s) {
-				s.start(
-					`🔍 Analyzing changes in ${stagedFiles.length} file${
-						stagedFiles.length === 1 ? '' : 's'
-					}`
-				);
-			}
-			const startTime = Date.now();
+			const progress = headless ? null : startGenerationProgress(
+				spinner(),
+				{
+					locale: config.locale,
+					provider: providerInstance.displayName,
+					count: generationCount,
+				}
+			);
+			let succeeded = false;
 			try {
 				const results = await Promise.all(
-					Array.from({ length: generationCount }, () =>
-						generateCommitMessage({
+					Array.from({ length: generationCount }, async (_, index) => {
+						const result = await generateCommitMessage({
 							model,
 							cwd: gitRoot,
 							files: stagedFiles,
@@ -156,19 +157,20 @@ export default async (
 							includeBody,
 							timeout,
 							customPrompt,
-						})
-					)
+							onProgress: progress
+								? (event) => progress.update(index, event)
+								: undefined,
+						});
+						progress?.complete(index);
+						return result;
+					})
 				);
+				succeeded = true;
 				return Array.from(
 					new Set(results.map(({ message }) => formatCommitMessage(message)))
 				);
 			} finally {
-				if (s) {
-					const duration = Date.now() - startTime;
-					s.stop(
-						`✅ Changes analyzed in ${(duration / 1000).toFixed(1)}s`
-					);
-				}
+				progress?.stop(succeeded);
 			}
 		};
 

@@ -1,3 +1,4 @@
+import type { OnGenerationProgress } from '../generation-progress.js';
 import { randomUUID } from 'node:crypto';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
@@ -79,6 +80,7 @@ export type AgentGenerateInput = {
 	includeBody: boolean;
 	cwd: string;
 	timeout: number;
+	onProgress?: OnGenerationProgress;
 };
 
 export type AgentGenerateOutput = {
@@ -353,7 +355,7 @@ export class Provider {
 
 	private async generateWithAgent(
 		model: string,
-		{ system, prompt, includeBody, cwd, timeout }: AgentGenerateInput
+		{ system, prompt, includeBody, cwd, timeout, onProgress }: AgentGenerateInput
 	): Promise<AgentGenerateOutput> {
 		const subscription = this.def.subscription;
 		if (subscription !== 'claude' && subscription !== 'codex') {
@@ -367,6 +369,7 @@ export class Provider {
 			cwd,
 			binary: this.getAgentBinary(),
 			timeout,
+			onProgress,
 		});
 		const output = (result.output ?? {}) as {
 			subject?: unknown;

@@ -141,6 +141,7 @@ export default testSuite(({ describe }) => {
 				),
 			});
 
+			const progress: { stage: string }[] = [];
 			const result = await generateCommitMessage({
 				model: asGenerationModel(model),
 				cwd: fixture.path,
@@ -150,12 +151,17 @@ export default testSuite(({ describe }) => {
 				maxLength: 72,
 				includeBody: false,
 				timeout: 5000,
+				onProgress: (event) => progress.push(event),
 			});
 
 			expect(result.message).toEqual({
 				subject: 'feat: update staged greeting',
 			});
 			expect(result.steps).toBe(1);
+			expect(progress[0].stage).toBe('reading-diff');
+			expect(progress.some(({ stage }) => stage === 'waiting')).toBe(true);
+			expect(progress.some(({ stage }) => stage === 'receiving')).toBe(true);
+			expect(progress[progress.length - 1]?.stage).toBe('validating');
 
 			const finalPrompt = JSON.stringify(model.doStreamCalls[0].prompt);
 			expect(finalPrompt).toMatch('staged greeting');
