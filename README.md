@@ -203,10 +203,11 @@ Write your instructions in a UTF-8 text or Markdown file. Use normal paragraphs,
 lists, quotes, and examples; no escaping is needed:
 
 ```markdown
-Write commit messages in Chinese, grouped by independent feature.
+Write one accurate, concise Git commit message in English from the staged diff.
 
-Each group should have a title followed by a list of important changes.
-Use type(scope): description for each title.
+Group related changes by purpose, with a Conventional Commit title for each group. Add brief bullet points only when the title needs more detail.
+
+Return only the commit message as plain text, with blank lines between groups and no overall title or code fences.
 ```
 
 Pass the file for one invocation, or save its path as the default:
@@ -245,8 +246,8 @@ For built-in types, the selected instructions supplement the existing built-in
 rules. For `type=custom`, they control the language, length, wording, grouping,
 and body. A non-empty prompt is required in custom mode.
 
-For a message containing a title and details for each independent feature, the
-[Chinese grouped-message example](examples/grouped-commit-prompt.txt) can be
+For a message grouped by independent purpose, with details only when needed,
+the [English grouped-message example](examples/grouped-commit-prompt.txt) can be
 copied to your own prompt file from a checkout of this repository:
 
 ```sh
