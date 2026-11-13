@@ -72,16 +72,14 @@ export default testSuite(({ describe }) => {
 			});
 		});
 
-		await test('round-trips a multiline prompt containing equals signs', async () => {
+		await test('rejects removed inline prompt and description config settings', async () => {
 			const { fixture, aicommits } = await createFixture();
 			try {
-				const prompt = '按功能分组，格式为 type(scope): 描述\n\n- 参数 a=b=c\n- 只输出纯文本';
-				await aicommits(['config', 'set', `prompt=${prompt}`, 'description=on']);
-				expect((await aicommits(['config', 'get', 'prompt'])).stdout).toBe(`prompt=${prompt}`);
-				expect((await aicommits(['config', 'get', 'description'])).stdout).toBe('description=true');
-				await aicommits(['config', 'set', 'prompt=', 'description=']);
-				expect((await aicommits(['config', 'get', 'description'])).stdout).toBe('description=false');
-				expect(await fs.readFile(path.join(fixture.path, '.aicommits'), 'utf8')).not.toMatch('prompt=');
+				for (const assignment of ['prompt=Inline rules', 'description=on']) {
+					const result = await aicommits(['config', 'set', assignment], { reject: false });
+					expect(result.exitCode).toBe(1);
+					expect(result.stderr).toMatch('Invalid config property');
+				}
 			} finally {
 				await fixture.rm();
 			}
@@ -100,14 +98,27 @@ export default testSuite(({ describe }) => {
 			}
 		});
 
-		await test('validates description switches', async () => {
+		await test('stores, displays and clears a prompt file without reading it', async () => {
 			const { fixture, aicommits } = await createFixture();
 			try {
-				const { stderr, exitCode } = await aicommits(['config', 'set', 'description=maybe'], { reject: false });
-				expect(exitCode).toBe(1);
-				expect(stderr).toMatch('Must be on or off');
-				await aicommits(['config', 'set', 'description=false']);
-				expect((await aicommits(['config', 'get', 'description'])).stdout).toBe('description=false');
+				await aicommits(['config', 'set', 'prompt-file=~/prompts/commit.md']);
+				expect((await aicommits(['config', 'get', 'prompt-file'])).stdout)
+					.toBe('prompt-file=~/prompts/commit.md');
+				expect((await aicommits(['config'])).stdout).toMatch('Prompt file: ~/prompts/commit.md');
+				await aicommits(['config', 'set', 'prompt-file=']);
+				expect(await fs.readFile(path.join(fixture.path, '.aicommits'), 'utf8'))
+					.not.toMatch('prompt-file=');
+			} finally {
+				await fixture.rm();
+			}
+		});
+
+		await test('ignores obsolete stored prompt settings instead of using them', async () => {
+			const { fixture, aicommits } = await createFixture();
+			try {
+				await fs.writeFile(path.join(fixture.path, '.aicommits'), 'prompt=Obsolete instructions\ndescription=on\n');
+				expect((await aicommits(['config', 'get', 'prompt', 'description'])).stdout).toBe('');
+				expect((await aicommits(['config'])).stdout).not.toMatch('Obsolete instructions');
 			} finally {
 				await fixture.rm();
 			}
@@ -220,8 +231,13 @@ export default testSuite(({ describe }) => {
 			});
 
 			test('defaults to enabled', async () => {
-				const get = await aicommits(['config', 'get', 'thinking']);
-				expect(get.stdout).toBe('thinking=enabled');
+				const { fixture, aicommits } = await createFixture();
+				try {
+					const get = await aicommits(['config', 'get', 'thinking']);
+					expect(get.stdout).toBe('thinking=enabled');
+				} finally {
+					await fixture.rm();
+				}
 			});
 
 			test('updates config', async () => {

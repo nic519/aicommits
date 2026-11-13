@@ -32,10 +32,9 @@ export default command(
 					console.log('Model:', config.OPENAI_MODEL);
 				}
 
-				if (config.prompt !== undefined) {
-					console.log('Prompt:', config.prompt);
+				if (config['prompt-file'] !== undefined) {
+					console.log('Prompt file:', config['prompt-file']);
 				}
-				console.log('Description:', config.description);
 
 				return;
 			}

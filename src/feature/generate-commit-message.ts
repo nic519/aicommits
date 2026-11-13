@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { z } from 'zod';
 import type { OnGenerationProgress } from './generation-progress.js';
-import type { GenerationModel } from './providers/base.js';
+import type { AgentGenerateInput, GenerationModel } from './providers/base.js';
 import {
 	getCommitTypePolicy,
 	type CommitType,
@@ -66,15 +66,14 @@ export type GenerateCommitMessageOptions = {
 
 const formatInstructions = {
 	plain: 'plain text',
-	custom: 'follow the custom prompt for the commit message format and grouping',
 	conventional: 'Conventional Commits: <type>(optional scope): <subject>',
 	gitmoji: 'Gitmoji: <emoji> <subject>',
 };
 
 type CommitInstructionOptions = Pick<
 	GenerateCommitMessageOptions,
-	'type' | 'locale' | 'maxLength' | 'includeBody' | 'customPrompt'
->;
+	'type' | 'locale' | 'maxLength' | 'customPrompt'
+> & Pick<AgentGenerateInput, 'includeBody'>;
 
 /** Resolve a locale code to a language label models follow more reliably than bare ISO codes. */
 export const describeCommitLocale = (locale: string) => {
@@ -114,6 +113,13 @@ const buildCommitInstructions = (
 	pathInstructions: Array<string | undefined>
 ) => {
 	const { format } = getCommitTypePolicy(type);
+	if (format === 'custom') {
+		return [
+			'Write an accurate Git commit message for the staged changes.',
+			...pathInstructions,
+			customPrompt,
+		].filter(Boolean).join('\n');
+	}
 	const localeLabel = describeCommitLocale(locale);
 	const localeIsEnglish = /^en([-_]|$)/i.test(locale.trim());
 	return [
@@ -558,7 +564,7 @@ const validateSubject = (subject: string) => {
 
 const parseOneShotMessage = (
 	text: string,
-	includeBody: boolean
+	includeBody: AgentGenerateInput['includeBody']
 ): CommitMessage => {
 	const lines = text
 		.replace(/```(?:\w+)?/g, '')
@@ -566,7 +572,7 @@ const parseOneShotMessage = (
 		.split('\n');
 	const subject = validateSubject(lines.shift() || '');
 	const body = includeBody ? lines.join('\n').trim() : '';
-	if (includeBody && !body) {
+	if (includeBody === true && !body) {
 		throw new Error('The model did not generate a commit message description.');
 	}
 	return { subject, ...(body ? { body } : {}) };
@@ -579,11 +585,16 @@ export const generateCommitMessage = async ({
 	type,
 	locale,
 	maxLength,
-	includeBody,
+	includeBody: requestedIncludeBody,
 	timeout,
 	customPrompt,
 	onProgress,
 }: GenerateCommitMessageOptions) => {
+	if (type === 'custom' && !customPrompt?.trim()) {
+		throw new KnownError('Custom format requires a non-empty prompt. Set prompt-file or use --prompt / --prompt-file.');
+	}
+	// Custom prompts decide whether a body is needed, independently of --description.
+	const includeBody = type === 'custom' ? 'optional' : requestedIncludeBody;
 	const { languageModel, agent: agentGenerate, mode, isLocal, callOptions } = model;
 	if (!languageModel && !agentGenerate) {
 		throw new KnownError('No model is available for commit generation.');
@@ -650,7 +661,7 @@ export const generateCommitMessage = async ({
 	const stagedDiff = await getStagedDiff(files, maxSelectedDiffBytes);
 	const runOneShot = async (
 		prompt: string,
-		oneShotIncludeBody = includeBody,
+		oneShotIncludeBody: AgentGenerateInput['includeBody'] = includeBody,
 		taskInstruction?: string
 	) => {
 		const results = [];
@@ -680,7 +691,7 @@ export const generateCommitMessage = async ({
 					const body = oneShotIncludeBody
 						? agentResult.message.body?.trim()
 						: undefined;
-					if (oneShotIncludeBody && !body) {
+					if (oneShotIncludeBody === true && !body) {
 						throw new Error(
 							'The model did not generate a commit message description.'
 						);
@@ -916,7 +927,7 @@ export const generateCommitMessage = async ({
 							'Subject must not end with an ellipsis.'
 						)
 				),
-			body: includeBody
+			body: includeBody === true
 				? z.string().trim().min(1)
 				: z.string().nullable().optional(),
 		}),

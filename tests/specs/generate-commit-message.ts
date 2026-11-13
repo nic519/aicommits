@@ -91,6 +91,93 @@ const asGenerationModel = (languageModel: LanguageModel): GenerationModel => {
 
 export default testSuite(({ describe }) => {
 	describe('generateCommitMessage', ({ test }) => {
+		for (const mode of ['agentic', 'fallback', 'agent-sdk'] as const) {
+			for (const includeBody of [false, true]) {
+				for (const withBody of [false, true]) {
+					test(`custom ${mode} preserves prompt-defined output with description=${includeBody} and body=${withBody}`, async () => {
+						const { fixture } = await createFixture({ 'file.txt': 'after\n' });
+						try {
+							const git = await createGit(fixture.path);
+							await git('add', ['file.txt']);
+							const subject = 'feat: update greeting';
+							const body = withBody
+								? '- Add a greeting\n\nfix: handle empty names\n- Use a default name'
+								: '';
+							const model = new MockLanguageModelV4({
+								doStream: toolCallStream('submit-custom', 'submitCommitMessage', {
+									subject,
+									body,
+								}),
+								doGenerate: textGeneration(body ? `${subject}\n\n${body}` : subject),
+							});
+							const checkInstructions = (system: string) => {
+								expect(system).not.toMatch('Return no body.');
+								expect(system).not.toMatch('Return a concise, non-empty body');
+								expect(system).not.toMatch('Write the commit message in English');
+								expect(system).not.toMatch('around 72 characters');
+								expect(system).not.toMatch('not file names');
+								expect(system).not.toMatch('never end it with an ellipsis');
+							};
+							const generationModel: GenerationModel = {
+								mode: mode === 'agentic' ? 'agentic' : 'fallback',
+								isLocal: false,
+								callOptions: {},
+								...(mode === 'agent-sdk'
+									? {
+											agent: async (input) => {
+												checkInstructions(input.system);
+												expect(input.includeBody).toBe('optional');
+												return { message: { subject, body } };
+											},
+										}
+									: { languageModel: model }),
+							};
+							const result = await generateCommitMessage({
+								model: generationModel,
+								cwd: fixture.path,
+								files: ['file.txt'],
+								type: 'custom',
+								locale: 'en',
+								maxLength: 72,
+								includeBody,
+								customPrompt: withBody
+									? 'Group independent changes with their own titles and details.'
+									: 'Write only a title.',
+								timeout: 5000,
+							});
+							expect(result.message).toEqual(
+								withBody
+									? {
+											subject: 'feat: update greeting',
+											body: '- Add a greeting\n\nfix: handle empty names\n- Use a default name',
+										}
+									: { subject: 'feat: update greeting' }
+							);
+							if (mode !== 'agent-sdk') {
+								const calls = mode === 'agentic'
+									? model.doStreamCalls
+									: model.doGenerateCalls;
+								expect(calls.length).toBe(1);
+								checkInstructions(JSON.stringify(calls[0].prompt));
+							}
+						} finally {
+							await fixture.rm();
+						}
+					});
+				}
+			}
+		}
+
+		for (const prompt of [undefined, '', ' \n\t']) {
+			test(`rejects custom mode without non-empty instructions (${JSON.stringify(prompt)})`, async () => {
+				await expect(generateCommitMessage({
+					model: { mode: 'fallback', isLocal: false, callOptions: {}, agent: async () => { throw new Error('AI must not be called'); } },
+					cwd: '.', files: [], type: 'custom', locale: 'en', maxLength: 72,
+					includeBody: false, timeout: 5000, customPrompt: prompt,
+				})).rejects.toThrow('Custom format requires a non-empty prompt');
+			});
+		}
+
 		test('keeps unknown Together models agentic by default', () => {
 			expect(supportsTogetherAgenticGeneration('future/model')).toBe(true);
 			expect(supportsTogetherAgenticGeneration('moonshotai/Kimi-K3')).toBe(

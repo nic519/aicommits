@@ -145,9 +145,10 @@ aicommits --all # or -a
 - `--clipboard` or `-c`: Copy the selected message to the clipboard instead of committing (default: **false**)
 - `--generate` or `-g`: Number of messages to generate (default: **1**)
 - `--exclude` or `-x`: Files to exclude from AI analysis
-- `--description`: Include a commit message description
+- `--description`: Include a commit message description (ignored for `type=custom`)
 - `--type` or `-t`: Git commit message format (default: **plain**). Supports `plain`, `custom`, `conventional`, `conventional+body`, `gitmoji`, and `subject+body`
-- `--prompt` or `-p`: Custom prompt to guide the LLM behavior (e.g., specific language, style instructions)
+- `--prompt-file <path>`: Read custom instructions from a UTF-8 text or Markdown file
+- `--prompt` or `-p`: Custom instructions for this run only; not saved, and replaces the default prompt file
 - `--no-verify` or `-n`: Bypass pre-commit hooks while committing (default: **false**)
 - `--yes` or `-y`: Skip confirmation when committing after message generation (default: **false**)
 
@@ -169,6 +170,9 @@ Add `--description` when the commit needs context beyond its subject:
 aicommits --description
 ```
 
+For `type=custom`, your prompt decides whether to include a body. Both
+`--description` and the saved `description` setting are ignored.
+
 #### Commit Message Formats
 
 You can choose from six different commit message formats:
@@ -183,7 +187,7 @@ You can choose from six different commit message formats:
 Use the `--type` flag to specify the format:
 
 ```sh
-aicommits --type custom -p "Group changes by independent feature"
+aicommits --type custom --prompt-file ~/prompts/commit.md
 aicommits --type conventional # or -t conventional
 aicommits --type conventional+body
 aicommits --type gitmoji       # or -t gitmoji
@@ -195,48 +199,70 @@ This feature is useful if your project follows a specific commit message standar
 
 #### Custom Prompts
 
-You can customize the LLM's behavior with the `--prompt` flag to guide commit message generation:
+Write your instructions in a UTF-8 text or Markdown file. Use normal paragraphs,
+lists, quotes, and examples; no escaping is needed:
 
-```sh
-# Write commit messages in a specific language
-aicommits -p "Write commit messages in Italian"
+```markdown
+Write commit messages in Chinese, grouped by independent feature.
 
-# Focus on specific aspects of the changes
-aicommits -p "Focus on performance implications of changes"
-
-# Use a specific style or tone
-aicommits -p "Use technical jargon suitable for senior developers"
-
-# Include specific details in the message
-aicommits -p "Always mention the specific function names and file paths changed"
+Each group should have a title followed by a list of important changes.
+Use type(scope): description for each title.
 ```
 
-Save a default prompt once instead of wrapping the CLI in a shell function:
+Pass the file for one invocation, or save its path as the default:
 
 ```sh
-aicommits config set 'prompt=Write Chinese messages grouped by independent feature'
-aicommits config set type=custom description=on
+# One invocation (relative paths start at the current working directory)
+aicommits --prompt-file ~/prompts/commit.md
+
+# Default for both the CLI and Git hook
+aicommits config set 'prompt-file=~/prompts/commit.md'
+aicommits config set type=custom
 aicommits
 ```
 
-The saved prompt also applies to the Git hook. A CLI `-p` prompt replaces it for
-that invocation; it is not appended. `prompt=` clears the saved prompt. Quoted
-values can contain multiple lines and `=` characters.
+The file is read on each invocation, so editing it takes effect on the next run.
+The CLI `--prompt-file` overrides the configured file for that invocation without
+changing the saved path. Saved relative paths start at your home directory,
+where `.aicommits` lives; both forms support `~/` and absolute paths. Quote paths
+that contain spaces. Missing, unreadable, or empty files produce an error.
 
-For a message containing a title and details for each independent feature, the
-[Chinese grouped-message example](examples/grouped-commit-prompt.txt) can be saved
-from a checkout of this repository:
+Clear the saved path with `aicommits config set prompt-file=`.
+
+The original `--prompt` / `-p` option still accepts inline instructions for this
+run only. It does not save or change your configuration, and replaces the default
+prompt file for that invocation:
 
 ```sh
-aicommits config set type=custom description=on locale=zh-CN \
-  "prompt=$(cat examples/grouped-commit-prompt.txt)"
+aicommits -p "Focus on the performance changes"
 ```
 
-`type=custom` leaves the wording and grouping to your prompt; `description=on`
-keeps the multiline body. The generator still requires a non-empty first line
-and, when a description is enabled, a non-empty body. This remains one Git
-commit: Git treats the first group title as the subject and later groups as
-part of the body.
+Prompt precedence: CLI `--prompt` / `-p`, CLI `--prompt-file`, configured
+`prompt-file`. Use either `--prompt` / `-p` or `--prompt-file` for a run; supplying
+both is an error. The selected source replaces the default file rather than
+combining sources. Reading a prompt file does not automatically change `type`.
+
+For built-in types, the selected instructions supplement the existing built-in
+rules. For `type=custom`, they control the language, length, wording, grouping,
+and body. A non-empty prompt is required in custom mode.
+
+For a message containing a title and details for each independent feature, the
+[Chinese grouped-message example](examples/grouped-commit-prompt.txt) can be
+copied to your own prompt file from a checkout of this repository:
+
+```sh
+mkdir -p ~/.config/aicommits
+cp examples/grouped-commit-prompt.txt ~/.config/aicommits/commit.md
+aicommits config set type=custom \
+  'prompt-file=~/.config/aicommits/commit.md'
+```
+
+`type=custom` leaves the wording, grouping, and presence of a body to your
+prompt. It ignores `locale`, `max-length`, and `--description`, preserving
+multiline output without requiring a body. The generator still requires a
+non-empty first line and retains its staged-data and tool-call constraints.
+This remains one Git commit: Git treats the first group title as
+the subject and later groups as part of the body.
 
 ### Git hook
 
@@ -421,24 +447,23 @@ The locale to use for the generated commit messages. Consult the list of codes i
 aicommits config set locale=cs
 ```
 
-#### prompt
+#### prompt-file
 
 Default: unset
 
-Persistent instructions for commit message generation in both CLI and Git hook
-modes. CLI `--prompt` / `-p` overrides this value. Clear it with
-`aicommits config set prompt=`. Use `type=custom` for a prompt-defined format and
-`description=on` when that format needs a body.
+Path to a UTF-8 text or Markdown file containing custom commit instructions for
+both CLI and Git hook modes. Supports absolute paths and `~/`; saved relative
+paths resolve from your home directory. CLI `--prompt-file` overrides this value
+and resolves relative paths from the current working directory. A temporary
+`--prompt` / `-p` replaces the default file; it cannot be combined with
+`--prompt-file`. Clear the saved path with
+`aicommits config set prompt-file=`. Use `type=custom` for a prompt-defined
+format, including whether to include a body.
 
-#### description
-
-Default: `off`
-
-Include a non-empty commit message body, without repeating `--description`.
-Accepts `on`, `off`, `true`, and `false`. `--description` always enables the body;
-body-required types (`subject+body`, `conventional+body`) still require it even
-when this setting is off. Clear the setting with `description=` to restore its
-default. Existing configurations keep their previous behavior.
+The development-only `prompt` and `description` config keys are no longer used.
+Move long instructions into a prompt file. For built-in formats, request a body
+with the original `--description` option or the `subject+body` / `conventional+body`
+types. For `type=custom`, the prompt decides whether a body is needed.
 
 #### generate
 

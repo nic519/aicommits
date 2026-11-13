@@ -8,6 +8,7 @@ import {
 	select,
 	confirm,
 	isCancel,
+	log,
 } from '@clack/prompts';
 import {
 	assertGitRepo,
@@ -16,6 +17,7 @@ import {
 } from '../utils/git.js';
 import { formatStagedFile, formatStagedStatusSummary } from '../utils/staged-files.js';
 import { getConfig, setConfigs } from '../utils/config-runtime.js';
+import { resolveCommitPrompt } from '../utils/prompt-file.js';
 import { getProvider } from '../feature/providers/index.js';
 import {
 	formatCommitMessage,
@@ -43,7 +45,8 @@ export default async (
 	noVerify: boolean,
 	includeDescription: boolean,
 	customPrompt: string | undefined,
-	rawArgv: string[]
+	rawArgv: string[],
+	promptFile?: string
 ) =>
 	(async () => {
 		const headless = isHeadless();
@@ -70,23 +73,19 @@ export default async (
 		if (!headless) {
 			const detectingFiles = spinner();
 			const detectedMessage = `${getDetectedMessage(stagedFiles)} [${formatStagedStatusSummary(stagedChanges)}]`;
-			if (stagedFiles.length <= 10) {
-				detectingFiles.start('Detecting staged files');
-				detectingFiles.stop(
-					`📁 ${detectedMessage}:\n${stagedChanges
-						.map((file) => `     ${formatStagedFile(file)}`)
-						.join('\n')}`
-				);
-			} else {
-				detectingFiles.start('Detecting staged files');
-				detectingFiles.stop(`📁 ${detectedMessage}`);
+			const visibleFiles = stagedChanges.slice(0, 20);
+			const fileLines = visibleFiles.map((file) => `     ${formatStagedFile(file)}`);
+			const remainingCount = stagedChanges.length - visibleFiles.length;
+			if (remainingCount > 0) {
+				fileLines.push(`     ... and ${remainingCount} more file${remainingCount > 1 ? 's' : ''}`);
 			}
+			detectingFiles.start('Detecting staged files');
+			detectingFiles.stop(`📁 ${detectedMessage}:\n${fileLines.join('\n')}`);
 		}
 
 		let config = await getConfig({
 			generate: generate?.toString(),
 			type: commitType?.toString(),
-			prompt: customPrompt,
 		});
 
 		let providerInstance = getProvider(config);
@@ -98,7 +97,6 @@ export default async (
 				config = await getConfig({
 					generate: generate?.toString(),
 					type: commitType?.toString(),
-					prompt: customPrompt,
 				});
 				providerInstance = getProvider(config);
 				if (providerInstance) {
@@ -135,11 +133,27 @@ export default async (
 		// Use the unified model setting or provider default
 		config.model = config.OPENAI_MODEL || providerInstance.getDefaultModel();
 		const { requiresBody } = getCommitTypePolicy(config.type);
-		const includeBody = includeDescription || config.description || requiresBody;
+		const includeBody = includeDescription || requiresBody;
 		const generationCount = requiresBody ? 1 : config.generate;
+		const prompt = await resolveCommitPrompt(config, promptFile, customPrompt);
+		const promptStrategy = config.type === 'custom'
+			? 'custom'
+			: prompt?.trim()
+				? `built-in (${config.type}) + additional`
+				: `built-in (${config.type})`;
+		const promptSource = customPrompt !== undefined
+			? '--prompt'
+			: promptFile !== undefined
+				? `--prompt-file: ${JSON.stringify(promptFile)}`
+				: config['prompt-file'] !== undefined
+					? `config: ${JSON.stringify(config['prompt-file'])}`
+					: undefined;
 
 		const attemptGeneration = async () => {
 			const model = providerInstance.getGenerationModel(config.model!);
+			if (!headless) {
+				log.info(`Model: ${config.model} | Prompt: ${promptStrategy}${promptSource ? ` [${promptSource}]` : ''}`);
+			}
 			const progress = headless ? null : startGenerationProgress(
 				spinner(),
 				{
@@ -160,7 +174,7 @@ export default async (
 							maxLength: config['max-length'],
 							includeBody,
 							timeout,
-							customPrompt: config.prompt,
+							customPrompt: prompt,
 							onProgress: progress
 								? (event) => progress.update(index, event)
 								: undefined,

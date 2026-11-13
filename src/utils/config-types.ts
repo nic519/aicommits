@@ -88,11 +88,11 @@ const configParsers = {
 	'codex-path'(path?: string) {
 		return path || undefined;
 	},
-	prompt(value?: string) {
+	'prompt-file'(value?: string) {
+		if (value !== undefined) {
+			parseAssert('prompt-file', typeof value === 'string' && !!value.trim(), 'Must be a non-empty path');
+		}
 		return value;
-	},
-	description(value?: string | boolean) {
-		return parseSwitch('description', value, false);
 	},
 	locale(locale?: string) {
 		if (!locale) {

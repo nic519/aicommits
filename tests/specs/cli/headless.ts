@@ -1,4 +1,6 @@
 import http from 'node:http';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { testSuite, expect } from 'manten';
 import { createFixture, createGit } from '../../utils.js';
 
@@ -182,7 +184,7 @@ export default testSuite(({ describe }) => {
 		});
 
 		for (const useHook of [false, true]) {
-			test(`uses type=custom with saved prompts and preserves grouped bodies in ${useHook ? 'the Git hook' : 'the CLI'}`, async () => {
+			test(`uses type=custom with a prompt file and preserves grouped bodies in ${useHook ? 'the Git hook' : 'the CLI'}`, async () => {
 				const body = '- 自动填充昵称\n\nfix(home): 修复加载状态\n\n- 复用缓存';
 				const agentServer = await startAgentServer(body);
 				const { fixture, aicommits } = await createFixture({
@@ -191,9 +193,9 @@ export default testSuite(({ describe }) => {
 						`OPENAI_BASE_URL=${agentServer.baseUrl}`,
 						'OPENAI_MODEL=test-model',
 						'type=custom',
-						'description=on',
-						'prompt=GROUP_EACH_FEATURE_WITH_ITS_OWN_DETAILS',
+						'prompt-file=~/commit.md',
 					].join('\n'),
+					'commit.md': 'GROUP_EACH_FEATURE_WITH_ITS_OWN_DETAILS',
 					'data.json': '{}\n',
 				});
 				try {
@@ -210,7 +212,8 @@ export default testSuite(({ describe }) => {
 					expect(output.trim()).toBe(`feat: add test data\n\n${body}`);
 					expect(agentServer.requests[0]).toMatch('GROUP_EACH_FEATURE_WITH_ITS_OWN_DETAILS');
 					expect(agentServer.requests[0]).not.toMatch('Format: plain text');
-					expect(agentServer.requests[0]).toMatch('Return a concise, non-empty body');
+					expect(agentServer.requests[0]).not.toMatch('Return a concise, non-empty body');
+					expect(agentServer.requests[0]).not.toMatch('Return no body.');
 				} finally {
 					await agentServer.close();
 					await fixture.rm();
@@ -218,23 +221,86 @@ export default testSuite(({ describe }) => {
 			});
 		}
 
-		test('CLI prompt replaces the configured prompt', async () => {
+		for (const useHook of [false, true]) {
+			test(`reads a multiline prompt file in ${useHook ? 'the Git hook' : 'the CLI'}`, async () => {
+				const agentServer = await startAgentServer();
+				const prompt = '# Commit rules\n\n- Preserve `a=b` and "quotes"\n- FILE_PROMPT_SENTINEL\n';
+				const { fixture, aicommits } = await createFixture({
+					'.aicommits': [
+						'OPENAI_API_KEY=test-key',
+						`OPENAI_BASE_URL=${agentServer.baseUrl}`,
+						'OPENAI_MODEL=test-model',
+						'prompt-file=~/commit rules.md',
+					].join('\n'),
+					'commit rules.md': prompt,
+					'data.json': '{}\n',
+				});
+				try {
+					const git = await createGit(fixture.path);
+					await git('add', ['data.json']);
+					if (useHook) {
+						await aicommits(['hook', 'install']);
+						await git('commit', ['--no-edit'], { env: { CI: '1', HOME: fixture.path, USERPROFILE: fixture.path } });
+					} else {
+						await aicommits([], { env: { CI: '1' } });
+					}
+					const request = JSON.parse(agentServer.requests[0]);
+					expect(request.messages.some((message: { content: string }) => message.content.includes(prompt))).toBe(true);
+					expect(agentServer.requests[0]).toMatch('Format: plain text');
+				} finally {
+					await agentServer.close();
+					await fixture.rm();
+				}
+			});
+		}
+
+		for (const flag of ['--prompt', '-p']) {
+				test(`${flag} temporarily overrides the default file without updating config`, async () => {
+				const agentServer = await startAgentServer();
+				const { fixture, aicommits } = await createFixture({
+					'.aicommits': [
+						'OPENAI_API_KEY=test-key',
+						`OPENAI_BASE_URL=${agentServer.baseUrl}`,
+						'OPENAI_MODEL=test-model',
+						'prompt-file=missing.md',
+					].join('\n'),
+					'data.json': '{}\n',
+				});
+				try {
+					const git = await createGit(fixture.path);
+					await git('add', ['data.json']);
+					const configPath = path.join(fixture.path, '.aicommits');
+					const before = await fs.readFile(configPath, 'utf8');
+					await aicommits([flag, 'CLI_PROMPT_SENTINEL'], { env: { CI: '1' } });
+					expect(agentServer.requests[0]).toMatch('CLI_PROMPT_SENTINEL');
+					expect(await fs.readFile(configPath, 'utf8')).toBe(before);
+				} finally {
+					await agentServer.close();
+					await fixture.rm();
+				}
+			});
+		}
+
+		test('CLI prompt file replaces the configured file and reads edits on the next run', async () => {
 			const agentServer = await startAgentServer();
 			const { fixture, aicommits } = await createFixture({
 				'.aicommits': [
 					'OPENAI_API_KEY=test-key',
 					`OPENAI_BASE_URL=${agentServer.baseUrl}`,
 					'OPENAI_MODEL=test-model',
-					'prompt=SAVED_PROMPT_SENTINEL',
+					'prompt-file=missing.md',
 				].join('\n'),
+				'override.md': 'CLI_FILE_SENTINEL',
 				'data.json': '{}\n',
 			});
 			try {
 				const git = await createGit(fixture.path);
 				await git('add', ['data.json']);
-				await aicommits(['-p', 'CLI_PROMPT_SENTINEL'], { env: { CI: '1' } });
-				expect(agentServer.requests[0]).toMatch('CLI_PROMPT_SENTINEL');
-				expect(agentServer.requests[0]).not.toMatch('SAVED_PROMPT_SENTINEL');
+				await aicommits(['--prompt-file', './override.md'], { env: { CI: '1' } });
+				expect(agentServer.requests[0]).toMatch('CLI_FILE_SENTINEL');
+				await fs.writeFile(path.join(fixture.path, 'override.md'), 'EDITED_FILE_SENTINEL');
+				await aicommits(['--prompt-file=./override.md'], { env: { CI: '1' } });
+				expect(agentServer.requests[1]).toMatch('EDITED_FILE_SENTINEL');
 			} finally {
 				await agentServer.close();
 				await fixture.rm();

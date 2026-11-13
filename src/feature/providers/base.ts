@@ -77,7 +77,8 @@ export type GenerationCallOptions = {
 export type AgentGenerateInput = {
 	system: string;
 	prompt: string;
-	includeBody: boolean;
+	/** `optional` lets a custom prompt decide whether to include a body. */
+	includeBody: boolean | 'optional';
 	cwd: string;
 	timeout: number;
 	onProgress?: OnGenerationProgress;
@@ -379,7 +380,7 @@ export class Provider {
 			message: {
 				subject: typeof output.subject === 'string' ? output.subject : '',
 				body:
-					includeBody && typeof output.body === 'string' && output.body.trim()
+					includeBody !== false && typeof output.body === 'string' && output.body.trim()
 						? output.body.trim()
 						: undefined,
 			},
