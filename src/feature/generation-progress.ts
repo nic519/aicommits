@@ -10,6 +10,31 @@ type ProgressSpinner = {
 	stop: (message: string, code?: number) => void;
 };
 
+type TokenUsage = {
+	inputTokens?: number;
+	outputTokens?: number;
+	totalTokens?: number;
+};
+
+const formatTokenUsage = (usages: Array<TokenUsage | undefined>) => {
+	const sum = (counts: Array<number | undefined>) =>
+		counts.every((count) => count !== undefined)
+			? counts.reduce<number>((total, count) => total + count!, 0)
+			: undefined;
+	const total = sum(usages.map((usage) => usage?.totalTokens ?? (
+		usage?.inputTokens !== undefined && usage.outputTokens !== undefined
+			? usage.inputTokens + usage.outputTokens
+			: undefined
+	)));
+	if (total === undefined) return 'tokens unavailable';
+	const input = sum(usages.map((usage) => usage?.inputTokens));
+	const output = sum(usages.map((usage) => usage?.outputTokens));
+	const details = input !== undefined && output !== undefined
+		? ` (in ${input.toLocaleString('en-US')} / out ${output.toLocaleString('en-US')})`
+		: '';
+	return `${total.toLocaleString('en-US')} tokens${details}`;
+};
+
 /** One display per generation attempt, including concurrent candidates. */
 export const startGenerationProgress = (
 	spinner: ProgressSpinner,
@@ -28,6 +53,7 @@ export const startGenerationProgress = (
 	const candidates = Array.from({ length: count }, () => ({
 		stage: 'reading-diff' as GenerationProgress['stage'],
 		done: false,
+		usage: undefined as TokenUsage | undefined,
 	}));
 	let stopped = false;
 	const elapsed = () => ((Date.now() - startedAt) / 1000).toFixed(1);
@@ -46,15 +72,20 @@ export const startGenerationProgress = (
 			if (stopped) return;
 			candidates[index].stage = event.stage;
 		},
-		complete: (index: number) => {
-			if (!stopped) candidates[index].done = true;
+		complete: (index: number, usage?: TokenUsage) => {
+			if (stopped) return;
+			candidates[index].done = true;
+			candidates[index].usage = usage;
 		},
 		stop: (success: boolean) => {
 			if (stopped) return;
 			stopped = true;
 			clearInterval(timer);
+			const tokens = success
+				? ` · ${formatTokenUsage(candidates.map(({ usage }) => usage))}`
+				: '';
 			spinner.stop(
-				`${success ? '✅ Generation completed' : '❌ Generation failed'} in ${elapsed()}s`,
+				`${success ? '✅ Generation completed' : '❌ Generation failed'} in ${elapsed()}s${tokens}`,
 				success ? 0 : 1
 			);
 		},

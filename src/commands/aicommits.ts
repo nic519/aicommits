@@ -179,7 +179,7 @@ export default async (
 								? (event) => progress.update(index, event)
 								: undefined,
 						});
-						progress?.complete(index);
+						progress?.complete(index, result.usage);
 						return result;
 					})
 				);

@@ -662,14 +662,16 @@ export const generateCommitMessage = async ({
 	const runOneShot = async (
 		prompt: string,
 		oneShotIncludeBody: AgentGenerateInput['includeBody'] = includeBody,
-		taskInstruction?: string
+		taskInstruction?: string,
+		systemOverride?: string
 	) => {
 		const results = [];
+		const agentUsages: LanguageModelUsage[] = [];
 		for (let attempt = 1; attempt <= ONE_SHOT_ATTEMPTS; attempt += 1) {
 			if (agentGenerate) {
 				onProgress?.({ stage: 'waiting' });
 				const agentResult = await agentGenerate({
-					system: buildCommitInstructions(
+					system: systemOverride ?? buildCommitInstructions(
 						{
 							type,
 							locale,
@@ -685,6 +687,7 @@ export const generateCommitMessage = async ({
 					timeout: budget.nextModelTimeout(),
 					onProgress,
 				});
+				agentUsages.push(usageFromCounts(agentResult.usage));
 				onProgress?.({ stage: 'validating' });
 				try {
 					const subject = validateSubject(agentResult.message.subject);
@@ -698,7 +701,7 @@ export const generateCommitMessage = async ({
 					}
 					return {
 						message: { subject, ...(body ? { body } : {}) },
-						usage: usageFromCounts(agentResult.usage),
+						usage: combineUsage(agentUsages),
 						steps: 1,
 					};
 				} catch (error) {
@@ -711,7 +714,7 @@ export const generateCommitMessage = async ({
 				onProgress?.({ stage: 'waiting-complete' });
 				result = await generateText({
 					model: languageModel!,
-					system: buildCommitInstructions(
+					system: systemOverride ?? buildCommitInstructions(
 						{
 							type,
 							locale,
@@ -774,10 +777,17 @@ export const generateCommitMessage = async ({
 			chunkResults.push(
 				await runOneShot(
 					diffChunk,
-					false,
-					stagedDiff.complete
-						? 'Summarize only this complete segment of the staged diff.'
-						: 'Summarize only this representative excerpt of the staged diff.'
+					true,
+					undefined,
+					[
+						stagedDiff.complete
+							? 'Summarize only this complete segment of the staged diff.'
+							: 'Summarize only this representative excerpt of the staged diff.',
+						'This is intermediate evidence for a later commit message, not the final commit message.',
+						'Use a short summary on the first line and a non-empty body listing the concrete changes.',
+						'Preserve independent behavior changes, fixes, option precedence, defaults, and compatibility rules visible in this segment.',
+						'Do not reduce the segment to a title or infer changes from missing context.',
+					].join('\n')
 				)
 			);
 		}
@@ -800,9 +810,8 @@ export const generateCommitMessage = async ({
 			[
 				changedFileTree,
 				chunkResults
-					.map(({ message }) => message.subject)
-					.map((subject) => `- ${subject}`)
-					.join('\n'),
+					.map(({ message }) => formatCommitMessage(message))
+					.join('\n\n'),
 			].join('\n\n'),
 			includeBody,
 			diffSummary.complete

@@ -91,6 +91,85 @@ const asGenerationModel = (languageModel: LanguageModel): GenerationModel => {
 
 export default testSuite(({ describe }) => {
 	describe('generateCommitMessage', ({ test }) => {
+		test('includes reported usage from invalid agent SDK responses before a successful retry', async () => {
+			const { fixture } = await createFixture({ 'file.txt': 'test\n' });
+			try {
+				const git = await createGit(fixture.path);
+				await git('add', ['file.txt']);
+				let attempts = 0;
+				const result = await generateCommitMessage({
+					model: {
+						mode: 'fallback', isLocal: false, callOptions: {},
+						agent: async () => ({
+							message: { subject: ++attempts === 1 ? '' : 'feat: add test data' },
+							usage: { inputTokens: 10, outputTokens: 5 },
+						}),
+					},
+					cwd: fixture.path,
+					files: ['file.txt'],
+					type: 'plain', locale: 'en', maxLength: 72,
+					includeBody: false, timeout: 5000,
+				});
+				expect(result.message.subject).toBe('feat: add test data');
+				expect(result.usage.inputTokens).toBe(20);
+				expect(result.usage.outputTokens).toBe(10);
+				expect(result.usage.totalTokens).toBe(30);
+			} finally {
+				await fixture.rm();
+			}
+		});
+
+		for (const mode of ['fallback', 'agent-sdk'] as const) {
+			test(`preserves detailed chunk summaries before applying the custom prompt (${mode})`, async () => {
+				const { fixture } = await createFixture({
+					'large.txt': `${'changed behavior\n'.repeat(2500)}`,
+				});
+				try {
+					const git = await createGit(fixture.path);
+					await git('add', ['.']);
+					const calls: Array<{ system: string; prompt: string; includeBody?: boolean | 'optional' }> = [];
+					const customPrompt = 'CUSTOM FORMAT: group each purpose with its own title and details.';
+					const subject = 'feat: read prompt files';
+					const body = '- CLI overrides the saved prompt file\n- Saved relative paths resolve from the home directory';
+					const model: GenerationModel = {
+						mode: 'fallback', isLocal: false, callOptions: {},
+						...(mode === 'agent-sdk' ? {
+							agent: async (input) => {
+								calls.push(input);
+								return { message: { subject, body } };
+							},
+						} : {
+							languageModel: new MockLanguageModelV4({
+								doGenerate: async ({ prompt }) => {
+									calls.push({
+										system: String(prompt.find((message) => message.role === 'system')?.content),
+										prompt: JSON.stringify(prompt.filter((message) => message.role !== 'system')),
+									});
+									return textGeneration(`${subject}\n\n${body}`);
+								},
+							}),
+						}),
+					};
+					await generateCommitMessage({
+						model, cwd: fixture.path, files: ['large.txt'],
+						type: 'custom', locale: 'en', maxLength: 72,
+						includeBody: false, customPrompt, timeout: 5000,
+					});
+					expect(calls.length).toBeGreaterThan(2);
+					const finalCall = calls[calls.length - 1];
+					expect(finalCall.prompt).toMatch('CLI overrides the saved prompt file');
+					expect(finalCall.prompt).toMatch('Saved relative paths resolve from the home directory');
+					expect(finalCall.system).toMatch(customPrompt);
+					for (const call of calls.slice(0, -1)) {
+						expect(call.system).not.toMatch(customPrompt);
+						if (mode === 'agent-sdk') expect(call.includeBody).toBe(true);
+					}
+				} finally {
+					await fixture.rm();
+				}
+			});
+		}
+
 		for (const mode of ['agentic', 'fallback', 'agent-sdk'] as const) {
 			for (const includeBody of [false, true]) {
 				for (const withBody of [false, true]) {
@@ -1187,7 +1266,7 @@ export default testSuite(({ describe }) => {
 				provider: 'togetherai.chat',
 				modelId: 'Qwen/Qwen2.5-7B-Instruct-Turbo',
 				doGenerate: async () =>
-					textGeneration('chore: summarize staged changes'),
+					textGeneration('chore: summarize staged changes\n\n- Preserve the changed fixture content'),
 			});
 
 			await generateCommitMessage({
@@ -1225,7 +1304,7 @@ export default testSuite(({ describe }) => {
 				provider: 'togetherai.chat',
 				modelId: 'Qwen/Qwen2.5-7B-Instruct-Turbo',
 				doGenerate: async () =>
-					textGeneration('chore: summarize very large staged changes'),
+					textGeneration('chore: summarize very large staged changes\n\n- Preserve the changed fixture content'),
 			});
 
 			const result = await generateCommitMessage({
@@ -1275,7 +1354,7 @@ export default testSuite(({ describe }) => {
 				provider: 'togetherai.chat',
 				modelId: 'Qwen/Qwen2.5-7B-Instruct-Turbo',
 				doGenerate: async () =>
-					textGeneration('chore: summarize representative changes'),
+					textGeneration('chore: summarize representative changes\n\n- Preserve the changed fixture content'),
 			});
 
 			await generateCommitMessage({
