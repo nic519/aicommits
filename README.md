@@ -209,6 +209,33 @@ aicommits -p "Use technical jargon suitable for senior developers"
 aicommits -p "Always mention the specific function names and file paths changed"
 ```
 
+Save a default prompt once instead of wrapping the CLI in a shell function:
+
+```sh
+aicommits config set 'prompt=Write Chinese messages grouped by independent feature'
+aicommits config set type=plain description=on
+aicommits
+```
+
+The saved prompt also applies to the Git hook. A CLI `-p` prompt replaces it for
+that invocation; it is not appended. `prompt=` clears the saved prompt. Quoted
+values can contain multiple lines and `=` characters.
+
+For a message containing a title and details for each independent feature, the
+[Chinese grouped-message example](examples/grouped-commit-prompt.txt) can be saved
+from a checkout of this repository:
+
+```sh
+aicommits config set type=plain description=on locale=zh-CN \
+  "prompt=$(cat examples/grouped-commit-prompt.txt)"
+```
+
+`type=plain` leaves the wording and grouping to your prompt; `description=on`
+keeps the multiline body. The generator still requires a non-empty first line
+and, when a description is enabled, a non-empty body. This remains one Git
+commit: Git treats the first group title as the subject and later groups as
+part of the body.
+
 ### Git hook
 
 You can also integrate _aicommits_ with Git via the [`prepare-commit-msg`](https://git-scm.com/docs/githooks#_prepare_commit_msg) hook. This lets you use Git like you normally would, and edit the commit message before committing.
@@ -391,6 +418,25 @@ The locale to use for the generated commit messages. Consult the list of codes i
 ```sh
 aicommits config set locale=cs
 ```
+
+#### prompt
+
+Default: unset
+
+Persistent instructions for commit message generation in both CLI and Git hook
+modes. CLI `--prompt` / `-p` overrides this value. Clear it with
+`aicommits config set prompt=`. Use `type=plain` for a prompt-defined format and
+`description=on` when that format needs a body.
+
+#### description
+
+Default: `off`
+
+Include a non-empty commit message body, without repeating `--description`.
+Accepts `on`, `off`, `true`, and `false`. `--description` always enables the body;
+body-required types (`subject+body`, `conventional+body`) still require it even
+when this setting is off. Clear the setting with `description=` to restore its
+default. Existing configurations keep their previous behavior.
 
 #### generate
 

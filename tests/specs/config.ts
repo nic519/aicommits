@@ -72,6 +72,47 @@ export default testSuite(({ describe }) => {
 			});
 		});
 
+		await test('round-trips a multiline prompt containing equals signs', async () => {
+			const { fixture, aicommits } = await createFixture();
+			try {
+				const prompt = '按功能分组，格式为 type(scope): 描述\n\n- 参数 a=b=c\n- 只输出纯文本';
+				await aicommits(['config', 'set', `prompt=${prompt}`, 'description=on']);
+				expect((await aicommits(['config', 'get', 'prompt'])).stdout).toBe(`prompt=${prompt}`);
+				expect((await aicommits(['config', 'get', 'description'])).stdout).toBe('description=true');
+				await aicommits(['config', 'set', 'prompt=', 'description=']);
+				expect((await aicommits(['config', 'get', 'description'])).stdout).toBe('description=false');
+				expect(await fs.readFile(path.join(fixture.path, '.aicommits'), 'utf8')).not.toMatch('prompt=');
+			} finally {
+				await fixture.rm();
+			}
+		});
+
+		await test('rejects malformed assignments without resetting settings', async () => {
+			const { fixture, aicommits } = await createFixture();
+			try {
+				await aicommits(['config', 'set', 'locale=zh-CN']);
+				const { stderr, exitCode } = await aicommits(['config', 'set', 'locale'], { reject: false });
+				expect(exitCode).toBe(1);
+				expect(stderr).toMatch('Expected key=value');
+				expect((await aicommits(['config', 'get', 'locale'])).stdout).toBe('locale=zh-CN');
+			} finally {
+				await fixture.rm();
+			}
+		});
+
+		await test('validates description switches', async () => {
+			const { fixture, aicommits } = await createFixture();
+			try {
+				const { stderr, exitCode } = await aicommits(['config', 'set', 'description=maybe'], { reject: false });
+				expect(exitCode).toBe(1);
+				expect(stderr).toMatch('Must be on or off');
+				await aicommits(['config', 'set', 'description=false']);
+				expect((await aicommits(['config', 'get', 'description'])).stdout).toBe('description=false');
+			} finally {
+				await fixture.rm();
+			}
+		});
+
 		await test('accepts type=conventional+body', async () => {
 			await aicommits(['config', 'set', 'OPENAI_API_KEY=abc']);
 			await aicommits(['config', 'set', 'type=conventional+body']);

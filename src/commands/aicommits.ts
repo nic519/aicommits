@@ -82,6 +82,7 @@ export default async (
 		let config = await getConfig({
 			generate: generate?.toString(),
 			type: commitType?.toString(),
+			prompt: customPrompt,
 		});
 
 		let providerInstance = getProvider(config);
@@ -93,6 +94,7 @@ export default async (
 				config = await getConfig({
 					generate: generate?.toString(),
 					type: commitType?.toString(),
+					prompt: customPrompt,
 				});
 				providerInstance = getProvider(config);
 				if (providerInstance) {
@@ -129,7 +131,7 @@ export default async (
 		// Use the unified model setting or provider default
 		config.model = config.OPENAI_MODEL || providerInstance.getDefaultModel();
 		const { requiresBody } = getCommitTypePolicy(config.type);
-		const includeBody = includeDescription || requiresBody;
+		const includeBody = includeDescription || config.description || requiresBody;
 		const generationCount = requiresBody ? 1 : config.generate;
 
 		const attemptGeneration = async () => {
@@ -155,7 +157,7 @@ export default async (
 							maxLength: config['max-length'],
 							includeBody,
 							timeout,
-							customPrompt,
+							customPrompt: config.prompt,
 						})
 					)
 				);

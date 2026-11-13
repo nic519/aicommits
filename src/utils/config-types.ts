@@ -86,6 +86,12 @@ const configParsers = {
 	'codex-path'(path?: string) {
 		return path || undefined;
 	},
+	prompt(value?: string) {
+		return value;
+	},
+	description(value?: string | boolean) {
+		return parseSwitch('description', value, false);
+	},
 	locale(locale?: string) {
 		if (!locale) {
 			return 'en';

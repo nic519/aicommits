@@ -87,13 +87,13 @@ cli(
 			},
 			description: {
 				type: Boolean,
-				description: 'Include a commit message description',
+				description: 'Include a commit message description (also configurable with description=on)',
 				default: false,
 			},
 			prompt: {
 				type: String,
 				description:
-					'Custom prompt to guide the LLM behavior (e.g., specific language, style instructions)',
+					'Custom prompt to guide the LLM behavior (overrides the saved prompt config)',
 				alias: 'p',
 			},
 		version: {
