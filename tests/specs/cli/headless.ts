@@ -182,7 +182,7 @@ export default testSuite(({ describe }) => {
 		});
 
 		for (const useHook of [false, true]) {
-			test(`uses saved prompts and preserves grouped bodies in ${useHook ? 'the Git hook' : 'the CLI'}`, async () => {
+			test(`uses type=custom with saved prompts and preserves grouped bodies in ${useHook ? 'the Git hook' : 'the CLI'}`, async () => {
 				const body = '- 自动填充昵称\n\nfix(home): 修复加载状态\n\n- 复用缓存';
 				const agentServer = await startAgentServer(body);
 				const { fixture, aicommits } = await createFixture({
@@ -190,7 +190,7 @@ export default testSuite(({ describe }) => {
 						'OPENAI_API_KEY=test-key',
 						`OPENAI_BASE_URL=${agentServer.baseUrl}`,
 						'OPENAI_MODEL=test-model',
-						'type=plain',
+						'type=custom',
 						'description=on',
 						'prompt=GROUP_EACH_FEATURE_WITH_ITS_OWN_DETAILS',
 					].join('\n'),
@@ -209,6 +209,7 @@ export default testSuite(({ describe }) => {
 					}
 					expect(output.trim()).toBe(`feat: add test data\n\n${body}`);
 					expect(agentServer.requests[0]).toMatch('GROUP_EACH_FEATURE_WITH_ITS_OWN_DETAILS');
+					expect(agentServer.requests[0]).not.toMatch('Format: plain text');
 					expect(agentServer.requests[0]).toMatch('Return a concise, non-empty body');
 				} finally {
 					await agentServer.close();

@@ -64,6 +64,7 @@ export type GenerateCommitMessageOptions = {
 
 const formatInstructions = {
 	plain: 'plain text',
+	custom: 'follow the custom prompt for the commit message format and grouping',
 	conventional: 'Conventional Commits: <type>(optional scope): <subject>',
 	gitmoji: 'Gitmoji: <emoji> <subject>',
 };

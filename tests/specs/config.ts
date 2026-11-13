@@ -113,6 +113,16 @@ export default testSuite(({ describe }) => {
 			}
 		});
 
+		await test('accepts type=custom', async () => {
+			const { fixture, aicommits } = await createFixture();
+			try {
+				await aicommits(['config', 'set', 'type=custom']);
+				expect((await aicommits(['config', 'get', 'type'])).stdout).toBe('type=custom');
+			} finally {
+				await fixture.rm();
+			}
+		});
+
 		await test('accepts type=conventional+body', async () => {
 			await aicommits(['config', 'set', 'OPENAI_API_KEY=abc']);
 			await aicommits(['config', 'set', 'type=conventional+body']);

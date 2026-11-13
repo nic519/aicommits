@@ -3,6 +3,7 @@ import { providers } from '../feature/providers/providers-data.js';
 
 const commitTypes = [
 	'plain',
+	'custom',
 	'conventional',
 	'conventional+body',
 	'gitmoji',
@@ -11,13 +12,14 @@ const commitTypes = [
 
 export type CommitType = (typeof commitTypes)[number];
 
-type CommitFormat = 'plain' | 'conventional' | 'gitmoji';
+type CommitFormat = 'plain' | 'custom' | 'conventional' | 'gitmoji';
 
 const commitTypePolicies: Record<
 	CommitType,
 	{ format: CommitFormat; requiresBody: boolean }
 > = {
 	plain: { format: 'plain', requiresBody: false },
+	custom: { format: 'custom', requiresBody: false },
 	conventional: { format: 'conventional', requiresBody: false },
 	'conventional+body': { format: 'conventional', requiresBody: true },
 	gitmoji: { format: 'gitmoji', requiresBody: false },
